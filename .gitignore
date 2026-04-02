@@ -5,7 +5,10 @@ __pycache__/
 .venv/
 venv/
 
-data/
+data/*
+!data/security_monitor.db
+!data/honeypots/
+!data/honeypots/*
 exports/
 
 frontend/node_modules/

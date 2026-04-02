@@ -1,0 +1,2 @@
+Decoy document for behavioral security monitoring.
+This file contains no real credentials or secrets.
