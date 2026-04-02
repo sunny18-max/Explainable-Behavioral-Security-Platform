@@ -23,6 +23,7 @@ def create_app(runtime: MonitorRuntime | None = None) -> Flask:
             {
                 "status": "ok",
                 "running": runtime.snapshot()["runtime"]["running"],
+                "api_version": "2026.04.scaled",
             }
         )
 

@@ -77,6 +77,12 @@ export async function apiRequest(path, options = {}) {
         lastError = new Error("Control request failed: 404");
         continue;
       }
+      if (response.status === 405) {
+        lastError = new Error(
+          "The running backend does not support this action yet. Restart `python server.py` so the API matches the current dashboard."
+        );
+        continue;
+      }
       if (!response.ok) {
         throw new Error(`Request failed: ${response.status}`);
       }

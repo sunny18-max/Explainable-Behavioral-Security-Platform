@@ -366,6 +366,13 @@ class MonitorService:
                 "users": self.list_users(),
                 "demo_scenarios": list(self.demo_collector.scenario_names),
                 "privacy_modes": ["basic", "browser_aware", "high_detail"],
+                "capabilities": {
+                    "privacy_controls": True,
+                    "retention_controls": True,
+                    "honeypot_controls": True,
+                    "pdf_export": True,
+                    "siem_export": True,
+                },
             },
             "stats": {
                 **metrics,

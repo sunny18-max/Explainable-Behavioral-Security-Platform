@@ -54,7 +54,13 @@ export function DashboardView({
   const honeypotStatus = analytics.honeypot ?? {};
   const replaySummary = current?.replay_summary ?? "";
   const domainCategories = current?.domain_categories ?? [];
-  const privacyModes = controls?.privacy_modes ?? ["basic", "browser_aware", "high_detail"];
+  const privacyModes = controls?.privacy_modes ?? [];
+  const capabilities = controls?.capabilities ?? {};
+  const supportsPrivacyControls = Boolean(capabilities.privacy_controls) || privacyModes.length > 0;
+  const supportsRetentionControls = Boolean(capabilities.retention_controls) || supportsPrivacyControls;
+  const supportsHoneypotControls = Boolean(capabilities.honeypot_controls);
+  const supportsPdfExport = Boolean(capabilities.pdf_export);
+  const supportsSiemExport = Boolean(capabilities.siem_export);
 
   const alertRate = !stats.total_samples
     ? "0.0"
@@ -85,6 +91,8 @@ export function DashboardView({
             type="button"
             className="nav-btn secondary"
             onClick={() => window.open(apiHref("/api/export/report.pdf"), "_blank", "noopener")}
+            disabled={!supportsPdfExport}
+            title={supportsPdfExport ? "" : "Restart python server.py to enable PDF export"}
           >
             Export PDF
           </button>
@@ -95,7 +103,13 @@ export function DashboardView({
           >
             Export JSON
           </button>
-          <button type="button" className="nav-btn secondary" onClick={() => callControl("/api/export/siem")} disabled={mutating}>
+          <button
+            type="button"
+            className="nav-btn secondary"
+            onClick={() => callControl("/api/export/siem")}
+            disabled={mutating || !supportsSiemExport}
+            title={supportsSiemExport ? "" : "Restart python server.py to enable SIEM export"}
+          >
             Export SIEM
           </button>
           <button type="button" className="nav-btn secondary" onClick={onBackHome}>
@@ -218,9 +232,9 @@ export function DashboardView({
               id="privacyMode"
               value={runtime.privacy_mode ?? "browser_aware"}
               onChange={(event) => callControl("/api/control/privacy-mode", { privacy_mode: event.target.value })}
-              disabled={mutating}
+              disabled={mutating || !supportsPrivacyControls}
             >
-              {privacyModes.map((modeName) => (
+              {(privacyModes.length ? privacyModes : ["browser_aware"]).map((modeName) => (
                 <option key={modeName} value={modeName}>
                   {modeName}
                 </option>
@@ -229,11 +243,14 @@ export function DashboardView({
             <button
               type="button"
               onClick={() => callControl("/api/control/retention-run")}
-              disabled={mutating}
+              disabled={mutating || !supportsRetentionControls}
             >
               Archive Now
             </button>
           </div>
+          {!supportsPrivacyControls ? (
+            <p className="muted-note">Restart `python server.py` to enable privacy and retention controls.</p>
+          ) : null}
         </div>
       </section>
 
@@ -425,7 +442,12 @@ export function DashboardView({
                 {honeypotHits.length ? honeypotHits.map((item) => <p key={item}>{item}</p>) : <p>No current decoy interaction detected.</p>}
               </div>
               <div className="inline-control">
-                <button type="button" onClick={() => callControl("/api/control/honeypots")} disabled={mutating}>
+                <button
+                  type="button"
+                  onClick={() => callControl("/api/control/honeypots")}
+                  disabled={mutating || !supportsHoneypotControls}
+                  title={supportsHoneypotControls ? "" : "Restart python server.py to enable honeypot refresh"}
+                >
                   Refresh Decoys
                 </button>
               </div>
