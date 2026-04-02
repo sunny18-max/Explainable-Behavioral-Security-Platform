@@ -1,0 +1,7 @@
+# Backend and monitoring dependencies
+Flask>=2.3
+pynput>=1.7
+scikit-learn>=1.5
+psutil>=5.9
+Pillow>=10.0
+pystray>=0.19

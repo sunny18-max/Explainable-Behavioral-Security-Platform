@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Explainable Security Monitor Companion",
+  "version": "0.1.0",
+  "description": "Captures active browser tab telemetry and sends it to the local Explainable Security Monitor backend.",
+  "permissions": ["tabs", "storage", "alarms"],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Security Monitor Companion",
+    "default_popup": "popup.html"
+  }
+}

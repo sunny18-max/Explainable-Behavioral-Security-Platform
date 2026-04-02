@@ -1,0 +1,76 @@
+body {
+  margin: 0;
+  background: #efe6d8;
+  color: #1a232c;
+  font-family: "Segoe UI", sans-serif;
+}
+
+.popup-shell {
+  width: 320px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.intro {
+  margin: 0;
+  color: #5d6773;
+  line-height: 1.45;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.92rem;
+}
+
+input,
+select,
+button {
+  font: inherit;
+  border-radius: 12px;
+  border: 1px solid rgba(26, 35, 44, 0.12);
+}
+
+input,
+select {
+  padding: 10px 12px;
+  background: rgba(255, 252, 247, 0.92);
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+button {
+  padding: 10px 12px;
+  cursor: pointer;
+  background: #1b6a72;
+  color: #f8f7f2;
+}
+
+.status-card {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 252, 247, 0.78);
+  border: 1px solid rgba(26, 35, 44, 0.10);
+}
+
+.status-card p {
+  margin: 8px 0 0;
+  color: #5d6773;
+  line-height: 1.45;
+}

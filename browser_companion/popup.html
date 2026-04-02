@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Security Monitor Companion</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup-shell">
+      <h1>Browser Companion</h1>
+      <p class="intro">
+        Sends active-tab telemetry to the local Explainable Security Monitor backend.
+      </p>
+
+      <label>
+        Backend URL
+        <input id="backendUrl" type="text" placeholder="http://127.0.0.1:8000" />
+      </label>
+
+      <label>
+        User profile
+        <input id="userName" type="text" placeholder="primary_user" />
+      </label>
+
+      <label>
+        Browser label
+        <select id="browserName">
+          <option value="chrome.exe">chrome.exe</option>
+          <option value="brave.exe">brave.exe</option>
+          <option value="msedge.exe">msedge.exe</option>
+          <option value="firefox.exe">firefox.exe</option>
+        </select>
+      </label>
+
+      <label class="checkbox-row">
+        <input id="captureEnabled" type="checkbox" />
+        <span>Capture active-tab events</span>
+      </label>
+
+      <div class="button-row">
+        <button id="saveButton" type="button">Save</button>
+        <button id="captureButton" type="button">Capture Now</button>
+      </div>
+
+      <div class="status-card">
+        <strong>Status</strong>
+        <p id="statusText">Waiting for settings.</p>
+      </div>
+    </main>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
