@@ -245,7 +245,6 @@ class MonitorService:
         feedback_offset = self.repository.load_feedback_adjustment(
             self.user_id,
             self.config.feedback_history_limit,
-            since=session_scope_start,
         )
         detection = self.detector.evaluate(
             features,
@@ -334,12 +333,10 @@ class MonitorService:
         return outcome
 
     def _load_profile_history(self) -> list[BehaviorFeatures]:
-        session_scope_start = self._session_scope_start()
         history = self.repository.load_recent_samples(
             self.user_id,
             limit=self.config.profile_history_limit,
             baseline_only=True,
-            since=session_scope_start,
         )
         if self.mode == "demo":
             seeded_history = [
