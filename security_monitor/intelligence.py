@@ -116,6 +116,8 @@ class BehaviorIntelligenceEngine:
             labels.add("development")
         if app_names & self.office_processes:
             labels.add("office")
+        if app_names & set(self.config.vpn_process_watchlist):
+            labels.add("vpn_tool")
         if any(observation.search_query for observation in features.app_observations):
             labels.add("browser_search")
         if any(observation.domain for observation in features.app_observations):
@@ -240,6 +242,12 @@ class BehaviorIntelligenceEngine:
             for query in search_queries
             for keyword in ("credential", "mimikatz", "token", "dump", "bypass", "shell")
         )
+        third_party_or_vpn_query = any(
+            keyword in query
+            for query in search_queries
+            for keyword in ("vpn", "third-party", "third party", "installer", "apk", "cracked")
+        )
+        vpn_active = bool(app_names & set(self.config.vpn_process_watchlist))
 
         matches: list[str] = []
         if suspicious_query and app_names & self.shell_processes:
@@ -258,6 +266,10 @@ class BehaviorIntelligenceEngine:
             for search_domain in ("google.com", "bing.com", "search.brave.com", "duckduckgo.com")
         ) and suspicious_query:
             matches.append("Search-engine activity contains attack-related reconnaissance terms.")
+        if third_party_or_vpn_query:
+            matches.append("Visible search activity suggests third-party application or VPN acquisition intent.")
+        if vpn_active:
+            matches.append("VPN or tunneling software is active in the current session window.")
         return matches
 
     def _analyze_process_lineage(self, features: BehaviorFeatures) -> list[str]:
@@ -377,6 +389,9 @@ class BehaviorIntelligenceEngine:
         for process_name in self.config.suspicious_process_watchlist:
             if process_name in lower_apps:
                 hits.append(f"Watchlist process observed: {process_name}")
+        for process_name in self.config.vpn_process_watchlist:
+            if process_name in lower_apps:
+                hits.append(f"VPN or tunneling client observed: {process_name}")
 
         for observation in features.app_observations:
             query = (observation.search_query or "").lower()
@@ -386,6 +401,8 @@ class BehaviorIntelligenceEngine:
 
         if any(app in self.remote_access_processes for app in lower_apps):
             hits.append("Remote access tooling was active in this window.")
+        if any(category == "vpn" for category in self._collect_domain_categories(features)):
+            hits.append("VPN-related domain activity was visible in this window.")
 
         hits.extend(process_alerts)
         hits.extend(honeypot_hits)
@@ -441,6 +458,8 @@ class BehaviorIntelligenceEngine:
             return "work"
         if self._matches_domain(normalized, self.config.social_domains):
             return "social"
+        if self._matches_domain(normalized, self.config.vpn_domains):
+            return "vpn"
         if self._matches_domain(normalized, self.config.admin_tool_domains):
             return "admin_reference"
         if "github" in normalized or "docs" in normalized:

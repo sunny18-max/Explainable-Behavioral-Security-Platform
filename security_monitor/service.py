@@ -73,10 +73,15 @@ class MonitorService:
 
     def switch_user(self, user_name: str) -> None:
         normalized = user_name.strip() or self.config.supported_user
+        was_running = self._started
+        if was_running:
+            self._active_collector.stop()
         self.user_name = normalized
         self.user_id = self.repository.get_or_create_user(normalized)
         self.latest_outcome = None
         self.last_collection_at = None
+        if was_running:
+            self._active_collector.start()
 
     def list_users(self) -> list[str]:
         users = self.repository.list_users()

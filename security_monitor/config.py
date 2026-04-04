@@ -48,6 +48,17 @@ class MonitorConfig:
         "keylogger",
         "powershell encodedcommand",
         "dump creds",
+        "vpn download",
+        "free vpn",
+        "third-party app",
+        "third party app",
+        "unofficial installer",
+        "apk download",
+        "cracked software",
+        "openvpn",
+        "wireguard",
+        "nordvpn",
+        "protonvpn",
     )
     suspicious_process_watchlist: tuple[str, ...] = (
         "credential_dump.exe",
@@ -62,6 +73,15 @@ class MonitorConfig:
         "pwsh.exe",
         "wscript.exe",
         "cscript.exe",
+    )
+    vpn_process_watchlist: tuple[str, ...] = (
+        "openvpn.exe",
+        "wireguard.exe",
+        "nordvpn.exe",
+        "protonvpn.exe",
+        "tailscale.exe",
+        "warp-svc.exe",
+        "hamachi-2-ui.exe",
     )
     honeypot_file_names: tuple[str, ...] = (
         "Executive_Payroll_2026.txt",
@@ -97,4 +117,15 @@ class MonitorConfig:
         "instagram.com",
         "facebook.com",
         "reddit.com",
+    )
+    vpn_domains: tuple[str, ...] = (
+        "protonvpn.com",
+        "nordvpn.com",
+        "openvpn.net",
+        "surfshark.com",
+        "windscribe.com",
+        "expressvpn.com",
+        "tailscale.com",
+        "wireguard.com",
+        "1.1.1.1",
     )

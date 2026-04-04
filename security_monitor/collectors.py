@@ -52,6 +52,7 @@ class WindowsActivityCollector:
         self._stop_event.clear()
         self._last_snapshot_at = datetime.now()
         self._session_started_at = datetime.now()
+        self._reset_buffers()
         self._add_note_once("Privacy-safe mode: keystroke timing only, no key content.")
 
         if os.name == "nt":
@@ -94,7 +95,18 @@ class WindowsActivityCollector:
         if self._mouse_listener is not None:
             self._mouse_listener.stop()
             self._mouse_listener = None
+        self._reset_buffers()
         self._started = False
+
+    def _reset_buffers(self) -> None:
+        with self._lock:
+            self._key_timestamps.clear()
+            self._mouse_segments.clear()
+            self._active_windows.clear()
+            self._process_observations.clear()
+            self._notes.clear()
+            self._last_mouse_position = None
+            self._last_mouse_time = None
 
     def capture_window(self) -> ActivityWindow:
         now = datetime.now()
