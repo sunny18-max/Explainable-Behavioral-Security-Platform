@@ -54,6 +54,7 @@ export function DashboardView({
   const honeypotStatus = analytics.honeypot ?? {};
   const replaySummary = current?.replay_summary ?? "";
   const domainCategories = current?.domain_categories ?? [];
+  const sessionStartedAt = runtime.live_session_started_at;
   const privacyModes = controls?.privacy_modes ?? [];
   const capabilities = controls?.capabilities ?? {};
   const supportsPrivacyControls = Boolean(capabilities.privacy_controls) || privacyModes.length > 0;
@@ -146,6 +147,7 @@ export function DashboardView({
             <span className="status-title">Current posture</span>
             <strong>{current?.severity ?? "idle"}</strong>
             <p>Last sample {formatTimestamp(runtime.last_collection_at)} for {runtime.user_name ?? "primary_user"}.</p>
+            <p className="status-caption">{sessionStartedAt ? `Session started ${formatTimestamp(sessionStartedAt)}.` : "Start live mode to begin a fresh session scope."}</p>
           </div>
           <div className="hero-status-card">
             <span className="status-title">Browser companion</span>
@@ -439,6 +441,7 @@ export function DashboardView({
               <div className="notes-block compact">
                 <p><strong>{honeypotStatus.decoy_count ?? 0}</strong> decoy files armed.</p>
                 <p>{honeypotStatus.directory ?? "No honeypot directory configured."}</p>
+                <p>{honeypotStatus.last_triggered_at ? `Last automated trigger ${formatTimestamp(honeypotStatus.last_triggered_at)}.` : "Use Trigger Decoy Demo for an instant explanation-ready hit or edit any decoy file manually."}</p>
                 {honeypotHits.length ? honeypotHits.map((item) => <p key={item}>{item}</p>) : <p>No current decoy interaction detected.</p>}
               </div>
               <div className="inline-control">
@@ -449,6 +452,14 @@ export function DashboardView({
                   title={supportsHoneypotControls ? "" : "Restart python server.py to enable honeypot refresh"}
                 >
                   Refresh Decoys
+                </button>
+                <button
+                  type="button"
+                  onClick={() => callControl("/api/control/honeypots/trigger", { file_name: honeypotStatus.files?.[0] })}
+                  disabled={mutating || !supportsHoneypotControls}
+                  title={supportsHoneypotControls ? "" : "Restart python server.py to enable honeypot automation"}
+                >
+                  Trigger Decoy Demo
                 </button>
               </div>
             </div>

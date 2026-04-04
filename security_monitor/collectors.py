@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ctypes
 import os
+import subprocess
+import sys
 import threading
 import time
 from collections import deque
@@ -63,8 +65,16 @@ class WindowsActivityCollector:
                 daemon=True,
             )
             self._window_thread.start()
+        elif sys.platform == "darwin":
+            self._add_note_once("macOS foreground application sampling enabled via AppleScript.")
+            self._window_thread = threading.Thread(
+                target=self._window_sampler_loop,
+                name="window-sampler",
+                daemon=True,
+            )
+            self._window_thread.start()
         else:
-            self._add_note_once("Active window sampling is available only on Windows.")
+            self._add_note_once("Active window sampling fallback is unavailable on this platform.")
 
         if pynput_keyboard is None:
             self._add_note_once("Install pynput to enable keyboard timing collection.")
@@ -171,25 +181,110 @@ class WindowsActivityCollector:
                     self._process_observations.append(process_observation)
 
     def _get_active_window_snapshot(self) -> tuple[str, ProcessObservation | None]:
+        if os.name == "nt":
+            try:
+                user32 = ctypes.windll.user32
+                hwnd = user32.GetForegroundWindow()
+                if not hwnd:
+                    return "", None
+                length = user32.GetWindowTextLengthW(hwnd)
+                if length == 0:
+                    return "", None
+                buffer = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buffer, length + 1)
+                title = buffer.value.strip()
+                process_observation = self._build_process_observation(user32, hwnd, title)
+                process_name = process_observation.process_name if process_observation else ""
+                if process_name and title:
+                    return f"{process_name} :: {title}", process_observation
+                return process_name or title, process_observation
+            except Exception as error:  # pragma: no cover - platform-specific
+                self._add_note_once(f"Foreground window sampling unavailable: {error}")
+                return "", None
+
+        if sys.platform == "darwin":
+            return self._get_macos_window_snapshot()
+
+        return "", None
+
+    def _get_macos_window_snapshot(self) -> tuple[str, ProcessObservation | None]:
+        script_lines = [
+            'tell application "System Events"',
+            'set frontApp to name of first application process whose frontmost is true',
+            'end tell',
+            'set windowTitle to ""',
+            'try',
+            'tell application frontApp',
+            'if (count of windows) > 0 then set windowTitle to name of front window',
+            'end tell',
+            'end try',
+            'return frontApp & "||" & windowTitle',
+        ]
+        command = ["osascript"]
+        for line in script_lines:
+            command.extend(["-e", line])
         try:
-            user32 = ctypes.windll.user32
-            hwnd = user32.GetForegroundWindow()
-            if not hwnd:
-                return "", None
-            length = user32.GetWindowTextLengthW(hwnd)
-            if length == 0:
-                return "", None
-            buffer = ctypes.create_unicode_buffer(length + 1)
-            user32.GetWindowTextW(hwnd, buffer, length + 1)
-            title = buffer.value.strip()
-            process_observation = self._build_process_observation(user32, hwnd, title)
-            process_name = process_observation.process_name if process_observation else ""
-            if process_name and title:
-                return f"{process_name} :: {title}", process_observation
-            return process_name or title, process_observation
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=False,
+            )
         except Exception as error:  # pragma: no cover - platform-specific
-            self._add_note_once(f"Foreground window sampling unavailable: {error}")
+            self._add_note_once(f"macOS foreground sampling unavailable: {error}")
             return "", None
+
+        if result.returncode != 0:
+            error_text = (result.stderr or result.stdout or "unknown AppleScript failure").strip()
+            self._add_note_once(f"macOS foreground sampling unavailable: {error_text}")
+            return "", None
+
+        payload = (result.stdout or "").strip()
+        if not payload:
+            return "", None
+
+        app_name, _, title = payload.partition("||")
+        app_name = app_name.strip()
+        title = title.strip()
+        observation = self._build_macos_process_observation(app_name, title)
+        if app_name and title:
+            return f"{app_name} :: {title}", observation
+        return app_name or title, observation
+
+    def _build_macos_process_observation(
+        self,
+        app_name: str,
+        title: str,
+    ) -> ProcessObservation | None:
+        process_name = app_name.strip() or "mac_app"
+        pid: int | None = None
+        if psutil is not None and app_name.strip():
+            try:
+                expected = app_name.strip().lower()
+                for process in psutil.process_iter(["pid", "name"]):
+                    candidate = str(process.info.get("name") or "").strip()
+                    if not candidate:
+                        continue
+                    lowered = candidate.lower()
+                    if lowered == expected or lowered == f"{expected}.app" or lowered.startswith(expected):
+                        process_name = candidate
+                        pid = int(process.info.get("pid")) if process.info.get("pid") is not None else None
+                        break
+            except Exception:
+                pass
+
+        return ProcessObservation(
+            observed_at=datetime.now(),
+            process_name=process_name,
+            pid=pid,
+            parent_name=None,
+            parent_pid=None,
+            ancestry=[],
+            exe_path=None,
+            window_title=title or None,
+            source="macos",
+        )
 
     def _build_process_observation(
         self,

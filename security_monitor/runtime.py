@@ -106,6 +106,13 @@ class MonitorRuntime:
             self.service.refresh_honeypots()
             return self.service.dashboard_snapshot(self._running, self._last_error)
 
+    def trigger_honeypot_demo(self, file_name: str | None = None) -> dict[str, object]:
+        with self._lock:
+            self.service.trigger_honeypot_demo(file_name)
+            if self._running and self.service.mode == "live":
+                self._collect_locked()
+            return self.service.dashboard_snapshot(self._running, self._last_error)
+
     def export_siem(self, webhook_url: str | None = None) -> dict[str, object]:
         with self._lock:
             return self.service.export_siem(webhook_url=webhook_url)

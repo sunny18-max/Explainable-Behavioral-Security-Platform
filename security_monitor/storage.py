@@ -28,6 +28,18 @@ class SQLiteRepository:
         connection.row_factory = sqlite3.Row
         return connection
 
+    @staticmethod
+    def _apply_since_clause(
+        query: str,
+        parameters: list[object],
+        column_name: str,
+        since: datetime | None,
+    ) -> str:
+        if since is None:
+            return query
+        parameters.append(since.isoformat())
+        return f"{query} AND {column_name} >= ?"
+
     def _initialize(self) -> None:
         with self._connect() as connection:
             connection.executescript(
@@ -479,6 +491,7 @@ class SQLiteRepository:
         user_id: int,
         limit: int,
         baseline_only: bool = False,
+        since: datetime | None = None,
     ) -> list[BehaviorFeatures]:
         query = """
             SELECT observed_at, typing_speed, typing_gap_variance, mouse_speed,
@@ -492,6 +505,7 @@ class SQLiteRepository:
         parameters: list[object] = [user_id]
         if baseline_only:
             query += " AND baseline_eligible = 1"
+        query = self._apply_since_clause(query, parameters, "observed_at", since)
         query += " ORDER BY observed_at DESC LIMIT ?"
         parameters.append(limit)
 
@@ -500,21 +514,26 @@ class SQLiteRepository:
 
         return [self._row_to_features(row) for row in reversed(rows)]
 
-    def load_recent_alerts(self, user_id: int, limit: int = 10) -> list[AlertRecord]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
+    def load_recent_alerts(
+        self,
+        user_id: int,
+        limit: int = 10,
+        since: datetime | None = None,
+    ) -> list[AlertRecord]:
+        query = """
                 SELECT a.id, a.created_at, a.severity, a.risk_score, a.summary,
                        a.explanation, a.feedback_label, a.feedback_note,
                        a.recommended_actions, a.cluster_key, u.username
                 FROM alerts AS a
                 JOIN users AS u ON u.id = a.user_id
                 WHERE a.user_id = ?
-                ORDER BY a.created_at DESC
-                LIMIT ?
-                """,
-                (user_id, limit),
-            ).fetchall()
+        """
+        parameters: list[object] = [user_id]
+        query = self._apply_since_clause(query, parameters, "a.created_at", since)
+        query += " ORDER BY a.created_at DESC LIMIT ?"
+        parameters.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
 
         return [
             AlertRecord(
@@ -588,20 +607,21 @@ class SQLiteRepository:
         self,
         user_id: int,
         limit: int,
+        since: datetime | None = None,
     ) -> list[dict[str, object]]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
+        query = """
                 SELECT observed_at, typing_speed, mouse_speed, risk_score,
                        severity, dominant_app, source, is_anomaly, confidence_score,
                        fingerprint_similarity, behavior_drift
                 FROM behavior_logs
                 WHERE user_id = ?
-                ORDER BY observed_at DESC
-                LIMIT ?
-                """,
-                (user_id, limit),
-            ).fetchall()
+        """
+        parameters: list[object] = [user_id]
+        query = self._apply_since_clause(query, parameters, "observed_at", since)
+        query += " ORDER BY observed_at DESC LIMIT ?"
+        parameters.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
 
         return [
             {
@@ -628,10 +648,12 @@ class SQLiteRepository:
             for row in reversed(rows)
         ]
 
-    def load_overview_metrics(self, user_id: int) -> dict[str, float | int]:
-        with self._connect() as connection:
-            behavior_row = connection.execute(
-                """
+    def load_overview_metrics(
+        self,
+        user_id: int,
+        since: datetime | None = None,
+    ) -> dict[str, float | int]:
+        behavior_query = """
                 SELECT COUNT(*) AS total_samples,
                        COALESCE(SUM(CASE WHEN baseline_eligible = 1 THEN 1 ELSE 0 END), 0) AS baseline_samples,
                        COALESCE(SUM(CASE WHEN is_anomaly = 1 THEN 1 ELSE 0 END), 0) AS anomaly_count,
@@ -644,28 +666,30 @@ class SQLiteRepository:
                        COUNT(DISTINCT dominant_app) AS distinct_apps
                 FROM behavior_logs
                 WHERE user_id = ?
-                """,
-                (user_id,),
-            ).fetchone()
-            browser_row = connection.execute(
-                """
+        """
+        browser_query = """
                 SELECT COUNT(*) AS browser_event_count,
                        MAX(observed_at) AS last_browser_event_at,
                        COUNT(DISTINCT domain) AS distinct_domains
                 FROM browser_events
                 WHERE user_id = ?
-                """,
-                (user_id,),
-            ).fetchone()
-            export_row = connection.execute(
-                """
+        """
+        export_query = """
                 SELECT COUNT(*) AS integration_export_count,
                        MAX(created_at) AS last_integration_export_at
                 FROM integration_exports
                 WHERE user_id = ?
-                """,
-                (user_id,),
-            ).fetchone()
+        """
+        behavior_parameters: list[object] = [user_id]
+        browser_parameters: list[object] = [user_id]
+        export_parameters: list[object] = [user_id]
+        behavior_query = self._apply_since_clause(behavior_query, behavior_parameters, "observed_at", since)
+        browser_query = self._apply_since_clause(browser_query, browser_parameters, "observed_at", since)
+        export_query = self._apply_since_clause(export_query, export_parameters, "created_at", since)
+        with self._connect() as connection:
+            behavior_row = connection.execute(behavior_query, behavior_parameters).fetchone()
+            browser_row = connection.execute(browser_query, browser_parameters).fetchone()
+            export_row = connection.execute(export_query, export_parameters).fetchone()
 
         return {
             "total_samples": int(behavior_row["total_samples"]),
@@ -793,19 +817,20 @@ class SQLiteRepository:
         self,
         user_id: int,
         limit: int = 8,
+        since: datetime | None = None,
     ) -> list[dict[str, object]]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
+        query = """
                 SELECT created_at, target_kind, target_name, status, file_path,
                        webhook_url, error_message
                 FROM integration_exports
                 WHERE user_id = ?
-                ORDER BY created_at DESC
-                LIMIT ?
-                """,
-                (user_id, limit),
-            ).fetchall()
+        """
+        parameters: list[object] = [user_id]
+        query = self._apply_since_clause(query, parameters, "created_at", since)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        parameters.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
 
         return [
             {
@@ -939,19 +964,23 @@ class SQLiteRepository:
             "archived_browser_events": browser_count,
         }
 
-    def load_app_distribution(self, user_id: int, limit: int = 6) -> list[dict[str, object]]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
+    def load_app_distribution(
+        self,
+        user_id: int,
+        limit: int = 6,
+        since: datetime | None = None,
+    ) -> list[dict[str, object]]:
+        query = """
                 SELECT dominant_app, COUNT(*) AS samples
                 FROM behavior_logs
                 WHERE user_id = ?
-                GROUP BY dominant_app
-                ORDER BY samples DESC, dominant_app ASC
-                LIMIT ?
-                """,
-                (user_id, limit),
-            ).fetchall()
+        """
+        parameters: list[object] = [user_id]
+        query = self._apply_since_clause(query, parameters, "observed_at", since)
+        query += " GROUP BY dominant_app ORDER BY samples DESC, dominant_app ASC LIMIT ?"
+        parameters.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
 
         return [
             {
@@ -961,18 +990,21 @@ class SQLiteRepository:
             for row in rows
         ]
 
-    def load_severity_distribution(self, user_id: int) -> list[dict[str, object]]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
+    def load_severity_distribution(
+        self,
+        user_id: int,
+        since: datetime | None = None,
+    ) -> list[dict[str, object]]:
+        query = """
                 SELECT severity, COUNT(*) AS samples
                 FROM behavior_logs
                 WHERE user_id = ?
-                GROUP BY severity
-                ORDER BY samples DESC, severity ASC
-                """,
-                (user_id,),
-            ).fetchall()
+        """
+        parameters: list[object] = [user_id]
+        query = self._apply_since_clause(query, parameters, "observed_at", since)
+        query += " GROUP BY severity ORDER BY samples DESC, severity ASC"
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
 
         return [
             {
@@ -986,21 +1018,22 @@ class SQLiteRepository:
         self,
         user_id: int,
         limit: int = 20,
+        since: datetime | None = None,
     ) -> list[dict[str, object]]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
+        query = """
                 SELECT observed_at, browser_name, tab_title, url, domain, search_query, source
                 FROM browser_events
                 WHERE user_id = ?
-                ORDER BY observed_at DESC
-                LIMIT ?
-                """,
-                (user_id, limit),
-            ).fetchall()
+        """
+        parameters: list[object] = [user_id]
+        query = self._apply_since_clause(query, parameters, "observed_at", since)
+        query += " ORDER BY observed_at DESC LIMIT ?"
+        parameters.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
 
         if not rows:
-            return self._load_recent_browser_activity_from_behavior_logs(user_id, limit)
+            return self._load_recent_browser_activity_from_behavior_logs(user_id, limit, since=since)
 
         return [
             {
@@ -1022,24 +1055,24 @@ class SQLiteRepository:
         self,
         user_id: int,
         limit: int = 6,
+        since: datetime | None = None,
     ) -> list[dict[str, object]]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
+        query = """
                 SELECT search_query, COUNT(*) AS uses
                 FROM browser_events
                 WHERE user_id = ?
                   AND search_query IS NOT NULL
                   AND TRIM(search_query) != ''
-                GROUP BY search_query
-                ORDER BY uses DESC, search_query ASC
-                LIMIT ?
-                """,
-                (user_id, limit),
-            ).fetchall()
+        """
+        parameters: list[object] = [user_id]
+        query = self._apply_since_clause(query, parameters, "observed_at", since)
+        query += " GROUP BY search_query ORDER BY uses DESC, search_query ASC LIMIT ?"
+        parameters.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
 
         if not rows:
-            return self._load_query_distribution_from_behavior_logs(user_id, limit)
+            return self._load_query_distribution_from_behavior_logs(user_id, limit, since=since)
 
         return [
             {
@@ -1053,20 +1086,20 @@ class SQLiteRepository:
         self,
         user_id: int,
         limit: int = 6,
+        since: datetime | None = None,
     ) -> list[dict[str, object]]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
+        query = """
                 SELECT domain, COUNT(*) AS uses
                 FROM browser_events
                 WHERE user_id = ?
                   AND domain != ''
-                GROUP BY domain
-                ORDER BY uses DESC, domain ASC
-                LIMIT ?
-                """,
-                (user_id, limit),
-            ).fetchall()
+        """
+        parameters: list[object] = [user_id]
+        query = self._apply_since_clause(query, parameters, "observed_at", since)
+        query += " GROUP BY domain ORDER BY uses DESC, domain ASC LIMIT ?"
+        parameters.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
 
         return [
             {
@@ -1146,19 +1179,23 @@ class SQLiteRepository:
                 (label, note or None, alert_id),
             )
 
-    def load_feedback_summary(self, user_id: int) -> dict[str, float | int]:
-        with self._connect() as connection:
-            row = connection.execute(
-                """
+    def load_feedback_summary(
+        self,
+        user_id: int,
+        since: datetime | None = None,
+    ) -> dict[str, float | int]:
+        query = """
                 SELECT COUNT(*) AS total_alerts,
                        COALESCE(SUM(CASE WHEN feedback_label = 'true_positive' THEN 1 ELSE 0 END), 0) AS true_positive_count,
                        COALESCE(SUM(CASE WHEN feedback_label = 'false_positive' THEN 1 ELSE 0 END), 0) AS false_positive_count,
                        COALESCE(SUM(CASE WHEN feedback_label = 'needs_review' THEN 1 ELSE 0 END), 0) AS needs_review_count
                 FROM alerts
                 WHERE user_id = ?
-                """,
-                (user_id,),
-            ).fetchone()
+        """
+        parameters: list[object] = [user_id]
+        query = self._apply_since_clause(query, parameters, "created_at", since)
+        with self._connect() as connection:
+            row = connection.execute(query, parameters).fetchone()
 
         true_positive_count = int(row["true_positive_count"])
         false_positive_count = int(row["false_positive_count"])
@@ -1172,22 +1209,27 @@ class SQLiteRepository:
             "false_positive_count": false_positive_count,
             "needs_review_count": needs_review_count,
             "unreviewed_alert_count": max(total_alerts - reviewed_count, 0),
-            "adaptive_threshold_offset": self.load_feedback_adjustment(user_id),
+            "adaptive_threshold_offset": self.load_feedback_adjustment(user_id, since=since),
         }
 
-    def load_feedback_adjustment(self, user_id: int, limit: int = 24) -> float:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
+    def load_feedback_adjustment(
+        self,
+        user_id: int,
+        limit: int = 24,
+        since: datetime | None = None,
+    ) -> float:
+        query = """
                 SELECT feedback_label
                 FROM alerts
                 WHERE user_id = ?
                   AND feedback_label IS NOT NULL
-                ORDER BY created_at DESC
-                LIMIT ?
-                """,
-                (user_id, limit),
-            ).fetchall()
+        """
+        parameters: list[object] = [user_id]
+        query = self._apply_since_clause(query, parameters, "created_at", since)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        parameters.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
 
         if not rows:
             return 0.0
@@ -1254,18 +1296,23 @@ class SQLiteRepository:
                 ),
             )
 
-    def load_baseline_versions(self, user_id: int, limit: int = 6) -> list[dict[str, object]]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
+    def load_baseline_versions(
+        self,
+        user_id: int,
+        limit: int = 6,
+        since: datetime | None = None,
+    ) -> list[dict[str, object]]:
+        query = """
                 SELECT captured_at, sample_count, feedback_offset, baselines_json
                 FROM baseline_snapshots
                 WHERE user_id = ?
-                ORDER BY captured_at DESC
-                LIMIT ?
-                """,
-                (user_id, limit),
-            ).fetchall()
+        """
+        parameters: list[object] = [user_id]
+        query = self._apply_since_clause(query, parameters, "captured_at", since)
+        query += " ORDER BY captured_at DESC LIMIT ?"
+        parameters.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
 
         versions: list[dict[str, object]] = []
         for row in reversed(rows):
@@ -1286,20 +1333,20 @@ class SQLiteRepository:
         self,
         user_id: int,
         limit: int = 6,
+        since: datetime | None = None,
     ) -> list[dict[str, object]]:
         counter: Counter[str] = Counter()
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
+        query = """
                 SELECT domain
                 FROM browser_events
                 WHERE user_id = ?
                   AND TRIM(domain) != ''
-                ORDER BY observed_at DESC
-                LIMIT 250
-                """,
-                (user_id,),
-            ).fetchall()
+        """
+        parameters: list[object] = [user_id]
+        query = self._apply_since_clause(query, parameters, "observed_at", since)
+        query += " ORDER BY observed_at DESC LIMIT 250"
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
 
         if rows:
             for row in rows:
@@ -1313,10 +1360,11 @@ class SQLiteRepository:
                     SELECT domain_categories
                     FROM behavior_logs
                     WHERE user_id = ?
+                    """ + (" AND observed_at >= ?" if since is not None else "") + """
                     ORDER BY observed_at DESC
                     LIMIT 120
                     """,
-                    (user_id,),
+                    ((user_id, since.isoformat()) if since is not None else (user_id,)),
                 ).fetchall()
             for row in behavior_rows:
                 for category in json.loads(str(row["domain_categories"] or "[]")):
@@ -1327,18 +1375,22 @@ class SQLiteRepository:
             for label, value in counter.most_common(limit)
         ]
 
-    def load_alert_clusters(self, user_id: int, limit: int = 6) -> list[dict[str, object]]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
+    def load_alert_clusters(
+        self,
+        user_id: int,
+        limit: int = 6,
+        since: datetime | None = None,
+    ) -> list[dict[str, object]]:
+        query = """
                 SELECT id, cluster_key, summary, severity, feedback_label, created_at
                 FROM alerts
                 WHERE user_id = ?
-                ORDER BY created_at DESC
-                LIMIT 120
-                """,
-                (user_id,),
-            ).fetchall()
+        """
+        parameters: list[object] = [user_id]
+        query = self._apply_since_clause(query, parameters, "created_at", since)
+        query += " ORDER BY created_at DESC LIMIT 120"
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
 
         clusters: dict[str, dict[str, object]] = {}
         for row in rows:
@@ -1367,21 +1419,24 @@ class SQLiteRepository:
         )
         return ordered[:limit]
 
-    def load_risk_heatmap(self, user_id: int) -> list[dict[str, object]]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
+    def load_risk_heatmap(
+        self,
+        user_id: int,
+        since: datetime | None = None,
+    ) -> list[dict[str, object]]:
+        query = """
                 SELECT CAST(strftime('%H', observed_at) AS INTEGER) AS hour_bin,
                        COALESCE(AVG(risk_score), 0) AS average_risk,
                        COALESCE(SUM(CASE WHEN is_anomaly = 1 THEN 1 ELSE 0 END), 0) AS alert_count,
                        COUNT(*) AS samples
                 FROM behavior_logs
                 WHERE user_id = ?
-                GROUP BY hour_bin
-                ORDER BY hour_bin ASC
-                """,
-                (user_id,),
-            ).fetchall()
+        """
+        parameters: list[object] = [user_id]
+        query = self._apply_since_clause(query, parameters, "observed_at", since)
+        query += " GROUP BY hour_bin ORDER BY hour_bin ASC"
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
 
         row_map = {int(row["hour_bin"]): row for row in rows}
         heatmap: list[dict[str, object]] = []
@@ -1464,18 +1519,19 @@ class SQLiteRepository:
         self,
         user_id: int,
         limit: int,
+        since: datetime | None = None,
     ) -> list[dict[str, object]]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
+        query = """
                 SELECT observed_at, app_observations
                 FROM behavior_logs
                 WHERE user_id = ?
-                ORDER BY observed_at DESC
-                LIMIT ?
-                """,
-                (user_id, max(limit, 10)),
-            ).fetchall()
+        """
+        parameters: list[object] = [user_id]
+        query = self._apply_since_clause(query, parameters, "observed_at", since)
+        query += " ORDER BY observed_at DESC LIMIT ?"
+        parameters.append(max(limit, 10))
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
 
         browser_rows: list[dict[str, object]] = []
         for row in rows:
@@ -1506,19 +1562,19 @@ class SQLiteRepository:
         self,
         user_id: int,
         limit: int,
+        since: datetime | None = None,
     ) -> list[dict[str, object]]:
         query_counter: dict[str, int] = {}
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
+        query = """
                 SELECT app_observations
                 FROM behavior_logs
                 WHERE user_id = ?
-                ORDER BY observed_at DESC
-                LIMIT 120
-                """,
-                (user_id,),
-            ).fetchall()
+        """
+        parameters: list[object] = [user_id]
+        query = self._apply_since_clause(query, parameters, "observed_at", since)
+        query += " ORDER BY observed_at DESC LIMIT 120"
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
 
         for row in rows:
             observations = json.loads(str(row["app_observations"] or "[]"))

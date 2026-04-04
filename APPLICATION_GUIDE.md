@@ -840,3 +840,26 @@ This flow demonstrates collection, detection, explanation, analysis, review, and
 - only timing and behavioral metadata are collected
 - browser telemetry depends on explicit extension consent
 - all storage is local SQLite by default
+
+
+## Fresh live-session behavior
+
+- Every time you start `live` mode, CogniShield now opens a fresh session scope for that selected user.
+- Risk score, current charts, recent alerts, browser activity, and baseline samples are computed from the new live session instead of reusing older stored runs.
+- Long-term evidence is still preserved in SQLite for exports and historical review, but the live dashboard now reflects the current run first.
+
+## Automated decoy testing
+
+1. Open the dashboard and switch to `live`.
+2. Click `Start`.
+3. In `Process and Deception`, click `Trigger Decoy Demo`.
+4. Wait one analysis cycle or click `Analyze Now`.
+5. Check `Current Assessment`, `Timeline Replay`, and `Decoy Hits` for the honeypot alert.
+
+Manual decoy testing still works too. You can edit and save any file inside `data\honeypots`, then wait one cycle.
+
+## macOS support
+
+- The live collector now supports macOS foreground-application sampling through AppleScript.
+- Keyboard and mouse timing still rely on `pynput` when it is installed.
+- On macOS, run the same backend and dashboard, grant any accessibility permissions requested by the OS, and the collector will capture the frontmost app and window title with reduced process-detail depth compared with Windows.

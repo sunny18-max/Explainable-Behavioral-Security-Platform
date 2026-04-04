@@ -41,11 +41,16 @@ class MonitorService:
         self.latest_outcome: CycleOutcome | None = None
         self.last_collection_at: datetime | None = None
         self.last_retention_run_at: datetime | None = None
+        self.live_session_started_at: datetime | None = None
         self.honeypots.ensure_decoys()
 
     def start(self) -> None:
         if self._started:
             return
+        if self.mode == "live":
+            self.live_session_started_at = datetime.now()
+        self.latest_outcome = None
+        self.last_collection_at = None
         self._active_collector.start()
         self._started = True
 
@@ -68,7 +73,10 @@ class MonitorService:
         )
         self.latest_outcome = None
         self.last_collection_at = None
+        self.live_session_started_at = None
         if was_running:
+            if self.mode == "live":
+                self.live_session_started_at = datetime.now()
             self._active_collector.start()
 
     def switch_user(self, user_name: str) -> None:
@@ -80,7 +88,10 @@ class MonitorService:
         self.user_id = self.repository.get_or_create_user(normalized)
         self.latest_outcome = None
         self.last_collection_at = None
+        self.live_session_started_at = None
         if was_running:
+            if self.mode == "live":
+                self.live_session_started_at = datetime.now()
             self._active_collector.start()
 
     def list_users(self) -> list[str]:
@@ -108,6 +119,11 @@ class MonitorService:
         return result
 
     def refresh_honeypots(self) -> dict[str, object]:
+        self.honeypots.ensure_decoys()
+        return self.honeypots.summary()
+
+    def trigger_honeypot_demo(self, file_name: str | None = None) -> dict[str, object]:
+        self.honeypots.trigger_demo_hit(file_name)
         return self.honeypots.summary()
 
     def set_alert_feedback(
@@ -217,6 +233,7 @@ class MonitorService:
                 )
         features = self.extractor.extract(activity_window)
         features = self._apply_privacy_to_features(features)
+        session_scope_start = self._session_scope_start()
         history = self._load_profile_history()
         profile = self.profiler.build(history)
         advanced_signals = self.intelligence.analyze(
@@ -228,6 +245,7 @@ class MonitorService:
         feedback_offset = self.repository.load_feedback_adjustment(
             self.user_id,
             self.config.feedback_history_limit,
+            since=session_scope_start,
         )
         detection = self.detector.evaluate(
             features,
@@ -269,8 +287,13 @@ class MonitorService:
             self.user_id,
             limit=self.config.chart_history_limit,
             baseline_only=False,
+            since=session_scope_start,
         )
-        recent_alerts = self.repository.load_recent_alerts(self.user_id, limit=8)
+        recent_alerts = self.repository.load_recent_alerts(
+            self.user_id,
+            limit=8,
+            since=session_scope_start,
+        )
         updated_profile = self.profiler.build(self._load_profile_history())
         self.repository.save_baseline_snapshot(
             self.user_id,
@@ -311,10 +334,12 @@ class MonitorService:
         return outcome
 
     def _load_profile_history(self) -> list[BehaviorFeatures]:
+        session_scope_start = self._session_scope_start()
         history = self.repository.load_recent_samples(
             self.user_id,
             limit=self.config.profile_history_limit,
             baseline_only=True,
+            since=session_scope_start,
         )
         if self.mode == "demo":
             seeded_history = [
@@ -331,19 +356,27 @@ class MonitorService:
             return True
         return not detection.is_anomaly and detection.risk_score < self.config.medium_risk_threshold
 
+    def _session_scope_start(self) -> datetime | None:
+        if self.mode != "live":
+            return None
+        return self.live_session_started_at
+
     def dashboard_snapshot(self, running: bool, last_error: str | None = None) -> dict[str, object]:
+        session_scope_start = self._session_scope_start()
         profile = self.profiler.build(self._load_profile_history())
-        metrics = self.repository.load_overview_metrics(self.user_id)
-        feedback_summary = self.repository.load_feedback_summary(self.user_id)
+        metrics = self.repository.load_overview_metrics(self.user_id, since=session_scope_start)
+        feedback_summary = self.repository.load_feedback_summary(self.user_id, since=session_scope_start)
         governance = self.repository.load_governance_metrics(self.user_id)
         honeypot_status = self.honeypots.summary()
         history = self.repository.load_recent_telemetry(
             self.user_id,
             self.config.chart_history_limit,
+            since=session_scope_start,
         )
         alerts = self.repository.load_recent_alerts(
             self.user_id,
             self.config.alert_history_limit,
+            since=session_scope_start,
         )
 
         return {
@@ -366,6 +399,12 @@ class MonitorService:
                     if self.last_collection_at is not None
                     else None
                 ),
+                "live_session_started_at": (
+                    self.live_session_started_at.isoformat()
+                    if self.live_session_started_at is not None
+                    else None
+                ),
+                "history_scope": "current_live_session" if session_scope_start else "full_user_history",
             },
             "controls": {
                 "users": self.list_users(),
@@ -388,23 +427,26 @@ class MonitorService:
                 "primary_apps": sorted(profile.primary_apps),
             },
             "analytics": {
-                "app_distribution": self.repository.load_app_distribution(self.user_id),
-                "severity_distribution": self.repository.load_severity_distribution(self.user_id),
-                "query_distribution": self.repository.load_query_distribution(self.user_id),
-                "domain_distribution": self.repository.load_domain_distribution(self.user_id),
+                "app_distribution": self.repository.load_app_distribution(self.user_id, since=session_scope_start),
+                "severity_distribution": self.repository.load_severity_distribution(self.user_id, since=session_scope_start),
+                "query_distribution": self.repository.load_query_distribution(self.user_id, since=session_scope_start),
+                "domain_distribution": self.repository.load_domain_distribution(self.user_id, since=session_scope_start),
                 "domain_category_distribution": self.repository.load_domain_category_distribution(
-                    self.user_id
+                    self.user_id,
+                    since=session_scope_start,
                 ),
                 "recent_browser_activity": self.repository.load_recent_browser_activity(
-                    self.user_id
+                    self.user_id,
+                    since=session_scope_start,
                 ),
                 "user_comparison": self.repository.load_user_comparison(),
-                "alert_clusters": self.repository.load_alert_clusters(self.user_id),
-                "risk_heatmap": self.repository.load_risk_heatmap(self.user_id),
-                "baseline_versions": self.repository.load_baseline_versions(self.user_id),
+                "alert_clusters": self.repository.load_alert_clusters(self.user_id, since=session_scope_start),
+                "risk_heatmap": self.repository.load_risk_heatmap(self.user_id, since=session_scope_start),
+                "baseline_versions": self.repository.load_baseline_versions(self.user_id, since=session_scope_start),
                 "demo_evaluation": self.repository.load_demo_evaluation(self.user_id),
                 "recent_integrations": self.repository.load_recent_integration_exports(
-                    self.user_id
+                    self.user_id,
+                    since=session_scope_start,
                 ),
                 "browser_companion": {
                     "active": self._browser_companion_active(

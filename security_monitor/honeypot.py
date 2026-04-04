@@ -12,6 +12,8 @@ class HoneypotManager:
         self.honeypot_dir = self.config.honeypot_path
         self.honeypot_dir.mkdir(parents=True, exist_ok=True)
         self._fingerprints: dict[str, tuple[int, int]] = {}
+        self._pending_hits: list[str] = []
+        self._last_triggered_at: datetime | None = None
 
     def ensure_decoys(self) -> list[Path]:
         paths: list[Path] = []
@@ -27,8 +29,22 @@ class HoneypotManager:
         self._prime_fingerprints(paths)
         return paths
 
+    def trigger_demo_hit(self, file_name: str | None = None) -> str:
+        paths = self.ensure_decoys()
+        target = next((path for path in paths if path.name == file_name), paths[0])
+        stamp = datetime.now()
+        with target.open("a", encoding="utf-8") as handle:
+            handle.write(f"Simulated decoy interaction for dashboard demo at {stamp.isoformat()}\n")
+        self._last_triggered_at = stamp
+        hit_message = f"Honeypot file touched: {target.name}"
+        self._pending_hits.append(hit_message)
+        return hit_message
+
     def check_hits(self, started_at: datetime, ended_at: datetime) -> list[str]:
         hits: list[str] = []
+        if self._pending_hits:
+            hits.extend(self._pending_hits)
+            self._pending_hits.clear()
         for path in self.ensure_decoys():
             try:
                 stat_result = path.stat()
@@ -44,7 +60,7 @@ class HoneypotManager:
             touched_at = datetime.fromtimestamp(touch_ns / 1_000_000_000)
             if started_at <= touched_at <= ended_at:
                 hits.append(f"Honeypot file touched: {path.name}")
-        return hits
+        return list(dict.fromkeys(hits))
 
     def summary(self) -> dict[str, object]:
         paths = self.ensure_decoys()
@@ -52,6 +68,12 @@ class HoneypotManager:
             "directory": str(self.honeypot_dir),
             "decoy_count": len(paths),
             "files": [path.name for path in paths],
+            "automation_ready": True,
+            "last_triggered_at": (
+                self._last_triggered_at.isoformat()
+                if self._last_triggered_at is not None
+                else None
+            ),
         }
 
     def _prime_fingerprints(self, paths: list[Path]) -> None:

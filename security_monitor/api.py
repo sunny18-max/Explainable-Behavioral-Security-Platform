@@ -75,6 +75,12 @@ def create_app(runtime: MonitorRuntime | None = None) -> Flask:
     def refresh_honeypots() -> object:
         return jsonify(runtime.refresh_honeypots())
 
+    @app.route("/api/control/honeypots/trigger", methods=["POST"])
+    def trigger_honeypot_demo() -> object:
+        payload = request.get_json(silent=True) or {}
+        file_name = str(payload.get("file_name", "")).strip() or None
+        return jsonify(runtime.trigger_honeypot_demo(file_name))
+
     @app.route("/api/extension/browser-events", methods=["POST"])
     def ingest_browser_events() -> object:
         payload = request.get_json(silent=True) or {}
