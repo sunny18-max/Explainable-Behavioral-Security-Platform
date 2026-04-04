@@ -36,8 +36,9 @@ class MonitorService:
         self.privacy_mode = self.config.default_privacy_mode
         self._active_collector = self.live_collector
         self._started = False
-        self.user_name = self.config.supported_user
-        self.user_id = self.repository.get_or_create_user(self.user_name)
+        self.user_id, self.user_name = self.repository.get_or_create_user_record(
+            self.config.supported_user
+        )
         self.latest_outcome: CycleOutcome | None = None
         self.last_collection_at: datetime | None = None
         self.last_retention_run_at: datetime | None = None
@@ -84,8 +85,9 @@ class MonitorService:
         was_running = self._started
         if was_running:
             self._active_collector.stop()
-        self.user_name = normalized
-        self.user_id = self.repository.get_or_create_user(normalized)
+        self.user_id, self.user_name = self.repository.get_or_create_user_record(
+            normalized
+        )
         self.latest_outcome = None
         self.last_collection_at = None
         self.live_session_started_at = None
@@ -162,7 +164,7 @@ class MonitorService:
     def ingest_browser_events(self, payload: dict[str, object]) -> dict[str, object]:
         requested_user_name = str(payload.get("user_name") or self.user_name).strip()
         user_name = requested_user_name or self.user_name
-        user_id = self.repository.get_or_create_user(user_name)
+        user_id, user_name = self.repository.get_or_create_user_record(user_name)
         raw_events = payload.get("events")
 
         if isinstance(raw_events, list):

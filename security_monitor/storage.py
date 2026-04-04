@@ -332,21 +332,25 @@ class SQLiteRepository:
             f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"
         )
 
-    def get_or_create_user(self, username: str) -> int:
+    def get_or_create_user_record(self, username: str) -> tuple[int, str]:
+        normalized = username.strip()
         created_at = datetime.now().isoformat()
         with self._connect() as connection:
             existing = connection.execute(
-                "SELECT id FROM users WHERE username = ?",
-                (username,),
+                "SELECT id, username FROM users WHERE LOWER(username) = LOWER(?)",
+                (normalized,),
             ).fetchone()
             if existing:
-                return int(existing["id"])
+                return int(existing["id"]), str(existing["username"])
 
             cursor = connection.execute(
                 "INSERT INTO users(username, created_at) VALUES (?, ?)",
-                (username, created_at),
+                (normalized, created_at),
             )
-            return int(cursor.lastrowid)
+            return int(cursor.lastrowid), normalized
+
+    def get_or_create_user(self, username: str) -> int:
+        return self.get_or_create_user_record(username)[0]
 
     def list_users(self) -> list[str]:
         with self._connect() as connection:
